@@ -1,0 +1,208 @@
+#:import get_color_from_hex kivy.utils.get_color_from_hex
+
+# ---------------------------
+# COLORI PRINCIPALI (Palette Dark Material)
+# ---------------------------
+#:set PRIMARY_COLOR get_color_from_hex("#6200EE")
+#:set ACCENT_COLOR get_color_from_hex("#BB86FC")
+#:set BG_COLOR get_color_from_hex("#121212")
+#:set PANEL_BG get_color_from_hex("#1E1E1E")
+#:set LINE_COLOR get_color_from_hex("#3700B3")
+#:set TEXT_COLOR get_color_from_hex("#FFFFFF")
+#:set HINT_COLOR get_color_from_hex("#999999")
+
+# ---------------------------
+# WIDGET TEMPLATE: CardBox
+# ---------------------------
+<CardBox@MDBoxLayout>:
+    md_bg_color: PANEL_BG
+    radius: [dp(12),]
+    line_color: LINE_COLOR
+    line_width: dp(1)
+    padding: dp(12)
+    spacing: dp(10)
+
+# ---------------------------
+# CONTROL ROW - SLIDER MANUALE
+# ---------------------------
+<ControlRow>:
+    orientation: 'vertical'
+    size_hint_y: None
+    height: dp(85)
+    spacing: dp(5)
+    padding: [dp(10), dp(5)]
+    
+    MDBoxLayout:
+        size_hint_y: None
+        height: dp(24)
+        spacing: dp(10)
+        
+        MDIcon:
+            icon: root.icon_name
+            size_hint: None, None
+            size: dp(18), dp(18)
+            theme_text_color: "Custom"
+            text_color: ACCENT_COLOR
+            pos_hint: {"center_y": .5}
+            
+        MDLabel:
+            text: root.label_text
+            font_style: "Caption"
+            theme_text_color: "Custom"
+            text_color: TEXT_COLOR
+            bold: True
+            valign: "middle"
+            
+        MDLabel:
+            id: valLabel
+            text: "50"
+            halign: "right"
+            font_style: "Caption"
+            theme_text_color: "Custom"
+            text_color: ACCENT_COLOR
+            bold: True
+    
+    MDSlider:
+        id: slider
+        min: 0
+        max: 150  # Esteso a 150 per permettere valori fino a 3.0 (50 * 3)
+        value: 50
+        color: PRIMARY_COLOR
+        track_color_active: PRIMARY_COLOR
+        thumb_color_active: ACCENT_COLOR
+        hint: False # Rimuoviamo il fumetto per un look più pulito
+
+# ---------------------------
+# MANUAL EDIT MENU
+# ---------------------------
+<ManualEditMenu>:
+    orientation: 'vertical'
+    spacing: dp(15)
+    padding: [0, dp(15), 0, dp(15)]
+    adaptive_height: True
+
+# ---------------------------
+# PERSONALIZZAZIONE LISTE DIALOGO
+# ---------------------------
+<OneLineListItem>:
+    theme_text_color: "Custom"
+    text_color: TEXT_COLOR
+
+<OneLineAvatarIconListItem>:
+    theme_text_color: "Custom"
+    text_color: TEXT_COLOR
+
+# ---------------------------
+# SCHERMATA PRINCIPALE
+# ---------------------------
+MDScreen:
+    md_bg_color: get_color_from_hex("#080808")
+    
+    MDBoxLayout:
+        orientation: 'vertical'
+        
+        MDTopAppBar:
+            title: "PromptVision™"
+            elevation: 4
+            md_bg_color: BG_COLOR
+            specific_text_color: TEXT_COLOR
+            anchor_title: "left"
+            right_action_items: 
+                [
+                ["crop", lambda x: app.showCropMenu()], 
+                ["star", lambda x: app.showLoadPresetDialog()], 
+                ["content-save-outline", lambda x: app.showSavePresetDialog()], 
+                ["history", lambda x: app.showLogDialog()]
+                ]
+        
+        MDBoxLayout:
+            # AREA PRINCIPALE
+            orientation: 'horizontal'
+            padding: dp(12)
+            spacing: dp(12)
+            
+            MDBoxLayout:
+                # BOX IMMAGINE + PULSANTI CARICAMENTO
+                orientation: 'vertical'
+                spacing: dp(12)
+                
+                CardBox:
+                    # CONTAINER IMMAGINE
+                    canvas.before:
+                        Color:
+                            rgba: 0, 0, 0, 1
+                        Rectangle:
+                            pos: self.pos
+                            size: self.size
+                    Image:
+                        id: main_image
+                        source: 'assets/placeholder.png' # Assicurati che esista o usa una stringa vuota
+                        allow_stretch: True
+                        keep_ratio: True
+                
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(52)
+                    spacing: dp(12)
+                    
+                    MDFillRoundFlatIconButton:
+                        text: "APRI IMMAGINE"
+                        icon: "folder-open"
+                        md_bg_color: PANEL_BG
+                        text_color: TEXT_COLOR
+                        size_hint_x: 1
+                        on_release: app.openFileManager()
+                    
+                    MDFillRoundFlatIconButton:
+                        text: "SALVA COPIA"
+                        icon: "download"
+                        md_bg_color: PRIMARY_COLOR
+                        text_color: TEXT_COLOR
+                        size_hint_x: 1
+                        on_release: app.saveFinalImage()
+            
+            CardBox:
+                # PANNELLO LATERALE SLIDER
+                size_hint_x: None
+                width: dp(280)
+                padding: dp(8)
+                
+                ScrollView:
+                    do_scroll_x: False
+                    bar_width: dp(4)
+                    MDBoxLayout:
+                        id: sideScroll
+                        orientation: "vertical"
+                        adaptive_height: True
+        
+        MDBoxLayout:
+            # SEZIONE PROMPT INPUT
+            size_hint_y: None
+            height: dp(100)
+            padding: [dp(20), dp(10), dp(20), dp(20)]
+            
+            CardBox:
+                radius: [dp(30),]
+                padding: [dp(20), 0, dp(10), 0]
+                spacing: dp(10)
+                md_bg_color: PANEL_BG
+                
+                MDTextField:
+                    id: prompt_input
+                    hint_text: "Esegui un comando... (Es: 'più caldo', 'più luminoso')"
+                    mode: "fill"
+                    fill_color_normal: 0, 0, 0, 0
+                    active_line: False
+                    pos_hint: {"center_y": 0.5}
+                    theme_text_color: "Custom"
+                    text_color_normal: TEXT_COLOR
+                    hint_text_color_normal: HINT_COLOR
+                    on_text_validate: app.processPrompt()
+                
+                MDIconButton:
+                    icon: "send-circle"
+                    theme_text_color: "Custom"
+                    text_color: ACCENT_COLOR
+                    user_font_size: "36sp"
+                    pos_hint: {"center_y": 0.5}
+                    on_release: app.processPrompt()
