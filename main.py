@@ -2,43 +2,36 @@ from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivy.properties import StringProperty
 
+# IMPORTAZIONE AZIONI UI E LOGICA DI BUSINESS (SEPARAZIONE MVC)
+from actions import (
+    undoAction, redoAction, openFileAction, manualUpdateAction,
+    processPromptAction, saveFinalImageAction, showCropMenuAction,
+    showSavePresetDialogAction, showLoadPresetDialogAction, showLogDialogAction
+)
+
+# IMPORTAZIONE MOTORI: NLP, PROCESSING IMMAGINI E UTILITY
 from interpreter import NaturalLanguageInterpreter
 from processor import ImageEngine
 from utils import UtilsManager
-from actions import (
-    openFileAction,
-    manualUpdateAction,
-    processPromptAction,
-    saveFinalImageAction,
-    showCropMenuAction,
-    showSavePresetDialogAction,
-    showLoadPresetDialogAction,
-    showLogDialogAction
-)
+
 
 class ControlRow(MDBoxLayout):
-    """
-    Rappresenta una singola riga nel menu laterale.
-    Contiene l'icona, il nome del parametro, lo slider e l'etichetta del valore.
-    I widget interni sono referenziati tramite ID definiti nel file .kv.
-    """
+    """WIDGET RIGA SINGOLA: ICONA, LABEL, SLIDER E VALORE"""
     label_text = StringProperty("")
     icon_name = StringProperty("")
 
+
 class ManualEditMenu(MDBoxLayout):
-    """
-    Menu laterale per il controllo manuale dei parametri di editing.
-    Gestisce la creazione dinamica degli slider e la loro sincronizzazione.
-    """
+    """GESTORE DEGLI SLIDER: COSTRUZIONE DINAMICA E SINCRONIZZAZIONE"""
+    
     def __init__(self, updateCallback, **kwargs):
         super().__init__(**kwargs)
         self.updateCallback = updateCallback
-        self.sliders = {}
+        self.sliders = {}  # CACHE PER AGGIORNAMENTI FUTURI
         self._buildControls()
 
     def _buildControls(self):
-        """Definisce e aggiunge i controlli per ogni parametro supportato."""
-        # Configurazione: (Etichetta UI, Chiave Parametro, Icona MD)
+        # CONFIGURAZIONE SLIDER: (ETICHETTA, CHIAVE PARAMETRO, ICONA)
         controls = [
             ("ESPOSIZIONE", "brightness", "brightness-6"),
             ("CONTRASTO", "contrast", "contrast-circle"),
@@ -52,107 +45,100 @@ class ManualEditMenu(MDBoxLayout):
             row.label_text = label
             row.icon_name = icon
 
-            # Otteniamo i riferimenti dai widget del file .kv
+            # RECUPERO WIDGET DAL KV PER IL BINDING
             slider = row.ids.slider
             valueLabel = row.ids.valLabel
 
-            # Bind per aggiornare l'etichetta numerica mentre si trascina
-            slider.bind(
-                value=lambda inst, val, lbl=valueLabel: self._updateLabel(val, lbl)
-            )
-            
-            # Bind per applicare la modifica all'immagine solo quando si rilascia il tocco
-            slider.bind(
-                on_touch_up=lambda inst, touch, k=key: self._onRelease(inst, touch, k)
-            )
+            # BINDING: AGGIORNA LABEL LIVE, APPLICA MODIFICA SOLO AL RILASCIO (ON_TOUCH_UP)
+            slider.bind(value=lambda inst, val, lbl=valueLabel: self._updateLabel(val, lbl))
+            slider.bind(on_touch_up=lambda inst, touch, k=key: self._onRelease(inst, touch, k))
 
-            # Memorizziamo i riferimenti per poterli sincronizzare in seguito
             self.sliders[key] = {"slider": slider, "label": valueLabel}
             self.add_widget(row)
 
     def _updateLabel(self, value, label):
-        """Aggiorna il testo del valore accanto allo slider (0-100)."""
+        # AGGIORNAMENTO VISIVO DEL VALORE (INT)
         label.text = str(int(value))
 
     def _onRelease(self, slider, touch, paramKey):
-        """Invia il nuovo valore al processore solo al termine dell'interazione."""
+        # APPLICA LA MODIFICA AL PROCESSORE SOLO SE IL TOUCH È SULLO SLIDER
         if slider.collide_point(*touch.pos):
-            # Convertiamo il valore dello slider (0-150) in scala (0.0-3.0)
-            # 50 è il valore neutro (1.0)
+            # NORMALIZZAZIONE VALORE (0-150 -> 0.0-3.0) E CALLBACK
             self.updateCallback(paramKey, slider.value / 50.0)
 
     def syncSliders(self, params):
-        """Sincronizza la posizione degli slider con i parametri correnti (es. dopo un prompt)."""
+        # SINCRONIZZA GUI CON I PARAMETRI REALI (ES. DOPO UN PRESET O UNDO)
         for key, value in params.items():
             if key in self.sliders:
-                # Convertiamo da scala decimale a valore slider
                 sliderValue = int(value * 50)
                 self.sliders[key]["slider"].value = sliderValue
                 self.sliders[key]["label"].text = str(sliderValue)
 
+
 class PromptVisionApp(MDApp):
-    """
-    Classe principale dell'applicazione PromptVision.
-    Inizializza i motori logici e gestisce gli eventi della UI.
-    """
+    """CONTROLLER PRINCIPALE: INIZIALIZZAZIONE E ROUTING EVENTI"""
     dialog = None
 
     def build(self):
-        # Configurazione estetica
+        # SETUP TEMA (DARK/PURPLE) E INIZIALIZZAZIONE CORE LOGICO
         self.theme_cls.theme_style = "Dark"
         self.theme_cls.primary_palette = "DeepPurple"
         self.theme_cls.accent_palette = "Amber"
 
-        # Inizializzazione componenti logici
         self.processor = ImageEngine()
         self.interpreter = NaturalLanguageInterpreter()
         self.utils = UtilsManager()
 
-        # Il file .kv viene caricato automaticamente se ha lo stesso nome (promptvision.kv)
-        # o se definito esplicitamente nel metodo build.
         return self.root
 
     def on_start(self):
-        """Eseguito all'avvio: popola il contenitore degli slider."""
+        # INIEZIONE DEL MENU MANUALE NELLA GUI AL LANCIO
         self.manualMenu = ManualEditMenu(updateCallback=self._manualUpdate)
-        # Assicurati che l'ID 'sideScroll' esista nel tuo file .kv
         if 'sideScroll' in self.root.ids:
             self.root.ids.sideScroll.add_widget(self.manualMenu)
 
-    # --- Wrapper per le azioni (chiamate dai bottoni della UI) ---
+    # --- WRAPPER EVENTI UI -> ACTIONS ---
 
     def openFileManager(self):
-        """Apre il selettore file per caricare un'immagine."""
+        # APERTURA FILE CHOOSER
         openFileAction(self)
 
     def _manualUpdate(self, paramKey, value):
-        """Gestisce l'aggiornamento proveniente dagli slider."""
+        # PONTE TRA SLIDER E PROCESSORE
         manualUpdateAction(self, paramKey, value)
 
     def processPrompt(self):
-        """Esegue l'analisi del linguaggio naturale sul testo inserito."""
+        # ELABORAZIONE TESTO UTENTE (NLP)
         processPromptAction(self)
 
     def saveFinalImage(self):
-        """Salva il risultato finale su disco."""
+        # SALVATAGGIO SU DISCO
         saveFinalImageAction(self)
 
     def showCropMenu(self):
-        """Mostra le opzioni di ritaglio."""
+        # ATTIVAZIONE MODALITÀ RITAGLIO
         showCropMenuAction(self)
 
     def showSavePresetDialog(self):
-        """Apre il dialogo per salvare un nuovo preset."""
+        # DIALOGO SALVATAGGIO PRESET
         showSavePresetDialogAction(self)
 
     def showLoadPresetDialog(self):
-        """Apre il manager dei preset salvati."""
+        # DIALOGO CARICAMENTO PRESET
         showLoadPresetDialogAction(self)
 
     def showLogDialog(self):
-        """Mostra la cronologia delle azioni effettuate."""
+        # VISUALIZZAZIONE STORICO OPERAZIONI
         showLogDialogAction(self)
 
+    def undo(self):
+        # ANNULLA AZIONE
+        undoAction(self)
+
+    def redo(self):
+        # RIPRISTINA AZIONE
+        redoAction(self)
+
+
 if __name__ == "__main__":
-    # Avvio dell'applicazione
     PromptVisionApp().run()

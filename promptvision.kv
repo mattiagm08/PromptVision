@@ -1,7 +1,7 @@
 #:import get_color_from_hex kivy.utils.get_color_from_hex
 
 # ---------------------------
-# COLORI PRINCIPALI (Palette Dark Material)
+# COLORI PRINCIPALI
 # ---------------------------
 #:set PRIMARY_COLOR get_color_from_hex("#6200EE")
 #:set ACCENT_COLOR get_color_from_hex("#BB86FC")
@@ -12,7 +12,7 @@
 #:set HINT_COLOR get_color_from_hex("#999999")
 
 # ---------------------------
-# WIDGET TEMPLATE: CardBox
+# TEMPLATE CARD BOX
 # ---------------------------
 <CardBox@MDBoxLayout>:
     md_bg_color: PANEL_BG
@@ -23,7 +23,7 @@
     spacing: dp(10)
 
 # ---------------------------
-# CONTROL ROW - SLIDER MANUALE
+# CONTROL ROW PER SLIDER MANUALE
 # ---------------------------
 <ControlRow>:
     orientation: 'vertical'
@@ -65,32 +65,21 @@
     MDSlider:
         id: slider
         min: 0
-        max: 150  # Esteso a 150 per permettere valori fino a 3.0 (50 * 3)
+        max: 150
         value: 50
         color: PRIMARY_COLOR
         track_color_active: PRIMARY_COLOR
         thumb_color_active: ACCENT_COLOR
-        hint: False # Rimuoviamo il fumetto per un look più pulito
+        hint: False
 
 # ---------------------------
-# MANUAL EDIT MENU
+# MENU SLIDER MANUALE
 # ---------------------------
 <ManualEditMenu>:
     orientation: 'vertical'
     spacing: dp(15)
     padding: [0, dp(15), 0, dp(15)]
     adaptive_height: True
-
-# ---------------------------
-# PERSONALIZZAZIONE LISTE DIALOGO
-# ---------------------------
-<OneLineListItem>:
-    theme_text_color: "Custom"
-    text_color: TEXT_COLOR
-
-<OneLineAvatarIconListItem>:
-    theme_text_color: "Custom"
-    text_color: TEXT_COLOR
 
 # ---------------------------
 # SCHERMATA PRINCIPALE
@@ -107,22 +96,22 @@ MDScreen:
             md_bg_color: BG_COLOR
             specific_text_color: TEXT_COLOR
             anchor_title: "left"
-            right_action_items: 
+            right_action_items:
                 [
-                ["crop", lambda x: app.showCropMenu()], 
-                ["star", lambda x: app.showLoadPresetDialog()], 
-                ["content-save-outline", lambda x: app.showSavePresetDialog()], 
+                ["undo", lambda x: app.undo()],
+                ["redo", lambda x: app.redo()],
+                ["crop", lambda x: app.showCropMenu()],
+                ["star", lambda x: app.showLoadPresetDialog()],
+                ["content-save-outline", lambda x: app.showSavePresetDialog()],
                 ["history", lambda x: app.showLogDialog()]
                 ]
-        
+
         MDBoxLayout:
-            # AREA PRINCIPALE
             orientation: 'horizontal'
             padding: dp(12)
             spacing: dp(12)
             
             MDBoxLayout:
-                # BOX IMMAGINE + PULSANTI CARICAMENTO
                 orientation: 'vertical'
                 spacing: dp(12)
                 
@@ -134,9 +123,11 @@ MDScreen:
                         Rectangle:
                             pos: self.pos
                             size: self.size
+                    
                     Image:
-                        id: main_image
-                        source: 'assets/placeholder.png' # Assicurati che esista o usa una stringa vuota
+                        # ID RICHIESTO DA REFRESHPREVIEWACTION
+                        id: main_image  
+                        source: 'assets/placeholder.png'
                         allow_stretch: True
                         keep_ratio: True
                 
@@ -171,6 +162,7 @@ MDScreen:
                     do_scroll_x: False
                     bar_width: dp(4)
                     MDBoxLayout:
+                        # ID RICHIESTO DA ON_START IN MAIN.PY
                         id: sideScroll
                         orientation: "vertical"
                         adaptive_height: True
@@ -188,8 +180,9 @@ MDScreen:
                 md_bg_color: PANEL_BG
                 
                 MDTextField:
-                    id: prompt_input
-                    hint_text: "Esegui un comando... (Es: 'più caldo', 'più luminoso')"
+                    # ID RICHIESTO DA PROCESSPROMPTACTION
+                    id: prompt_input  
+                    hint_text: "Esegui un comando... (Es: 'Rendi l'immagine più luminosa', 'Rendi l'immagine più nitida')"
                     mode: "fill"
                     fill_color_normal: 0, 0, 0, 0
                     active_line: False
@@ -197,6 +190,7 @@ MDScreen:
                     theme_text_color: "Custom"
                     text_color_normal: TEXT_COLOR
                     hint_text_color_normal: HINT_COLOR
+                    # ESEGUE AZIONE AL PREMERE INVIO
                     on_text_validate: app.processPrompt()
                 
                 MDIconButton:
@@ -206,3 +200,4 @@ MDScreen:
                     user_font_size: "36sp"
                     pos_hint: {"center_y": 0.5}
                     on_release: app.processPrompt()
+                    

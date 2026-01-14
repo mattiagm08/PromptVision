@@ -2,56 +2,53 @@ from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.dialog import MDDialog
 from kivymd.uix.button import MDRaisedButton, MDFlatButton
 from kivymd.uix.textfield import MDTextField
-from kivymd.uix.list import (
-    OneLineListItem,
-    OneLineAvatarIconListItem,
-    IconRightWidget,
-    MDList
-)
+from kivymd.uix.list import OneLineListItem, MDList
+from kivymd.uix.label import MDLabel
 from kivy.uix.scrollview import ScrollView
 from plyer import filechooser
 import os
 
+
 def refreshPreviewAction(app):
-    """Aggiorna l'elemento Image della UI ricaricando il file temporaneo."""
-    path = app.processor.saveTempResult()
+    # AGGIORNA IL PREVIEW DELL'IMMAGINE NELL'UI DOPO OGNI MODIFICA
+    tempPath = app.processor.saveTempResult()
     imageWidget = app.root.ids.main_image
-    imageWidget.source = ""  # Reset per forzare il refresh
-    imageWidget.source = path
+    imageWidget.source = ""
+    imageWidget.source = tempPath
     imageWidget.reload()
 
+
 def openFileAction(app):
-    """Gestisce l'apertura di un nuovo file immagine tramite filechooser."""
-    path = filechooser.open_file(
+    # APRE IL FILECHOOSER PER CARICARE UN'IMMAGINE E AGGIORNA SLIDER E PREVIEW
+    filePath = filechooser.open_file(
         title="Apri Immagine",
-        filters=[("Immagini", "*.png", "*.jpg", "*.jpeg")]
+        filters=[("Immagini", "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.webp", "*.tiff")]
     )
 
-    if path and app.processor.loadImage(path[0]):
+    if filePath and app.processor.loadImage(filePath[0]):
         refreshPreviewAction(app)
         app.manualMenu.syncSliders(app.processor.currentParams)
-        # LOG CRONOLOGIA
-        filename = os.path.basename(path[0])
-        app.utils.logAction(f"Immagine caricata: {filename}")
+        app.utils.logAction(f"Immagine caricata: {os.path.basename(filePath[0])}")
+
 
 def manualUpdateAction(app, paramKey, value):
-    """Applica le modifiche provenienti dal movimento manuale degli slider."""
+    # APPLICA IL VALORE MODIFICATO DAGLI SLIDER AL PROCESSORE
     if not app.processor.originalImage:
         return
 
     app.processor.updateParam(paramKey, value)
     app.processor.applyProcessing()
     refreshPreviewAction(app)
-    # LOG CRONOLOGIA
     app.utils.logAction(f"Slider {paramKey} impostato a {value:.2f}")
 
+
 def processPromptAction(app):
-    """Analizza il testo inserito, aggiorna i parametri e pulisce l'input."""
+    # ELABORA IL TESTO INSERITO DALL'UTENTE CON L'INTERPRETER
     text = app.root.ids.prompt_input.text
     if not text or not app.processor.originalImage:
         return
 
-    changes, params_list = app.interpreter.parsePrompt(text, app.processor.currentParams)
+    changes, paramsList = app.interpreter.parsePrompt(text, app.processor.currentParams)
 
     if changes:
         for param, value in changes.items():
@@ -60,29 +57,46 @@ def processPromptAction(app):
         app.processor.applyProcessing()
         refreshPreviewAction(app)
         app.manualMenu.syncSliders(app.processor.currentParams)
-        
-        # LOG CRONOLOGIA
-        app.utils.logAction(f"Prompt: '{text}' (Modificati: {', '.join(params_list)})")
-    
+        app.utils.logAction(f"Prompt: '{text}' (Modificati: {', '.join(paramsList)})")
+
     app.root.ids.prompt_input.text = ""
 
+
 def saveFinalImageAction(app):
-    """Esporta l'immagine processata in formato PNG."""
+    # SALVA IL RISULTATO FINALE SU DISCO CON GESTIONE AUTOMATICA ESTENSIONE
     if not app.processor.processedImage:
         return
 
-    path = filechooser.save_file(
+    filePath = filechooser.save_file(
         title="Salva Immagine",
-        filters=[("PNG", "*.png")]
+        filters=[("PNG", "*.png"), ("JPEG", "*.jpg"), ("WEBP", "*.webp"), ("TIFF", "*.tiff")]
     )
 
-    if path:
-        target = path[0] if path[0].endswith(".png") else path[0] + ".png"
-        app.processor.processedImage.save(target)
-        app.utils.logAction(f"Immagine salvata in: {os.path.basename(target)}")
+    if not filePath:
+        return
+
+    targetPath = filePath[0]
+    ext = os.path.splitext(targetPath)[1].lower()
+
+    if not ext:
+        targetPath += ".png"
+        ext = ".png"
+
+    formatMap = {
+        ".png": "PNG",
+        ".jpg": "JPEG",
+        ".jpeg": "JPEG",
+        ".webp": "WEBP",
+        ".tiff": "TIFF"
+    }
+
+    fmt = formatMap.get(ext, "PNG")
+    app.processor.processedImage.save(targetPath, fmt)
+    app.utils.logAction(f"Immagine esportata: {os.path.basename(targetPath)} ({fmt})")
+
 
 def showCropMenuAction(app):
-    """Mostra il dialogo con le opzioni di aspect ratio per il ritaglio."""
+    # MOSTRA IL DIALOGO PER SCEGLIERE IL FORMATO DI RITAGLIO
     if not app.processor.originalImage:
         return
 
@@ -90,7 +104,7 @@ def showCropMenuAction(app):
     scroll = ScrollView()
     listView = MDList()
 
-    formats = [
+    cropFormats = [
         ("Originale (Reset)", "original"),
         ("1:1 Quadrato", 1.0),
         ("16:9 Panoramico", 16 / 9),
@@ -98,7 +112,7 @@ def showCropMenuAction(app):
         ("3:2 Classico", 3 / 2)
     ]
 
-    for label, ratio in formats:
+    for label, ratio in cropFormats:
         item = OneLineListItem(
             text=label,
             on_release=lambda x, r=ratio: applyCropAction(app, r)
@@ -112,14 +126,13 @@ def showCropMenuAction(app):
         title="Scegli Formato Ritaglio",
         type="custom",
         content_cls=layout,
-        buttons=[
-            MDFlatButton(text="ANNULLA", on_release=lambda x: app.dialog.dismiss())
-        ]
+        buttons=[MDFlatButton(text="ANNULLA", on_release=lambda x: app.dialog.dismiss())]
     )
     app.dialog.open()
 
+
 def applyCropAction(app, ratio):
-    """Esegue l'operazione di ritaglio scelta dal menu."""
+    # APPLICA IL RITAGLIO SCELTO E AGGIORNA PREVIEW
     app.dialog.dismiss()
 
     if ratio == "original":
@@ -132,8 +145,9 @@ def applyCropAction(app, ratio):
     app.processor.applyProcessing()
     refreshPreviewAction(app)
 
+
 def showSavePresetDialogAction(app):
-    """Mostra il dialogo per inserire il nome del nuovo preset."""
+    # MOSTRA IL DIALOGO PER SALVARE UN NUOVO PRESET
     if not app.processor.originalImage:
         return
 
@@ -144,11 +158,11 @@ def showSavePresetDialogAction(app):
         height="80dp"
     )
 
-    app.presetField = MDTextField(hint_text="Inserisci nome preset (es. Vintage)")
+    app.presetField = MDTextField(hint_text="Nome preset (es. Vintage)")
     content.add_widget(app.presetField)
 
     app.dialog = MDDialog(
-        title="Salva Preset Corrente",
+        title="Salva Preset",
         type="custom",
         content_cls=content,
         buttons=[
@@ -158,83 +172,99 @@ def showSavePresetDialogAction(app):
     )
     app.dialog.open()
 
+
 def savePresetAction(app):
-    """Salva i parametri attuali tramite UtilsManager."""
-    name = app.presetField.text
-    if name:
-        app.utils.savePreset(name, app.processor.currentParams)
-        app.utils.logAction(f"Preset salvato: {name}")
+    # SALVA I PARAMETRI CORRENTI COME NUOVO PRESET
+    presetName = app.presetField.text
+    if presetName:
+        app.utils.savePreset(presetName, app.processor.currentParams)
+        app.utils.logAction(f"Preset salvato: {presetName}")
     app.dialog.dismiss()
 
+
+def loadPresetAction(app, presetName):
+    # CARICA UN PRESET E APPLICA I PARAMETRI ALL'IMMAGINE
+    app.dialog.dismiss()
+    params = app.utils.loadPreset(presetName)
+
+    if params:
+        app.processor.updateParamsBatch(params)
+        app.processor.applyProcessing()
+        refreshPreviewAction(app)
+        app.manualMenu.syncSliders(app.processor.currentParams)
+        app.utils.logAction(f"Preset caricato: {presetName}")
+
+
+def deletePresetAction(app, presetName):
+    # ELIMINA UN PRESET E AGGIORNA LA LISTA DEI PRESET
+    app.utils.deletePreset(presetName)
+    app.utils.logAction(f"Preset eliminato: {presetName}")
+    app.dialog.dismiss()
+    showLoadPresetDialogAction(app)
+
+
+def showLogDialogAction(app):
+    # MOSTRA IL LOG DELLE AZIONI IN UN DIALOGO SCORRIBILE
+    logs = app.utils.getLogs() or "Nessuna azione registrata in questa sessione."
+
+    content = MDBoxLayout(orientation="vertical", size_hint_y=None, height="300dp", padding="12dp")
+    scroll = ScrollView(do_scroll_x=False)
+
+    label = MDLabel(text=logs, size_hint_y=None, halign="left", valign="top")
+    label.bind(texture_size=lambda inst, val: setattr(inst, "height", val[1]))
+    label.text_size = (400, None)
+
+    scroll.add_widget(label)
+    content.add_widget(scroll)
+
+    app.dialog = MDDialog(
+        title="Cronologia Azioni",
+        type="custom",
+        content_cls=content,
+        buttons=[MDFlatButton(text="CHIUDI", on_release=lambda x: app.dialog.dismiss())]
+    )
+    app.dialog.open()
+
+
+def undoAction(app):
+    # ESEGUE UN UNDO E AGGIORNA UI E SLIDER
+    if app.processor.undo():
+        refreshPreviewAction(app)
+        app.manualMenu.syncSliders(app.processor.currentParams)
+        app.utils.logAction("Undo")
+
+
+def redoAction(app):
+    # ESEGUE UN REDO E AGGIORNA UI E SLIDER
+    if app.processor.redo():
+        refreshPreviewAction(app)
+        app.manualMenu.syncSliders(app.processor.currentParams)
+        app.utils.logAction("Redo")
+
+
 def showLoadPresetDialogAction(app):
-    """Mostra la lista dei preset salvati per il caricamento o eliminazione."""
-    presets = app.utils.listPresets()
+    # MOSTRA LA LISTA DEI PRESET DISPONIBILI E PERMETTE DI CARICARLI
+    presets = app.utils.getPresetNames()
 
     if not presets:
-        app.dialog = MDDialog(
-            title="Preset Salvati",
-            text="Nessun preset trovato in memoria.",
-            buttons=[MDFlatButton(text="OK", on_release=lambda x: app.dialog.dismiss())]
-        )
-        app.dialog.open()
+        app.utils.logAction("Nessun preset disponibile")
         return
 
-    layout = MDBoxLayout(orientation="vertical", size_hint_y=None, height="240dp")
+    layout = MDBoxLayout(orientation="vertical", size_hint_y=None, height="300dp", padding="12dp")
     scroll = ScrollView()
     listView = MDList()
 
-    for preset in presets:
-        item = OneLineAvatarIconListItem(
-            text=preset,
-            on_release=lambda x, p=preset: loadPresetAction(app, p)
-        )
-
-        deleteIcon = IconRightWidget(
-            icon="delete",
-            on_release=lambda x, p=preset: deletePresetAction(app, p)
-        )
-
-        item.add_widget(deleteIcon)
+    for name in presets:
+        item = OneLineListItem(text=name, on_release=lambda x, n=name: loadPresetAction(app, n))
         listView.add_widget(item)
 
     scroll.add_widget(listView)
     layout.add_widget(scroll)
 
     app.dialog = MDDialog(
-        title="I tuoi Preset",
+        title="Carica Preset",
         type="custom",
         content_cls=layout,
-        buttons=[MDFlatButton(text="CHIUDI", on_release=lambda x: app.dialog.dismiss())]
-    )
-    app.dialog.open()
-
-def loadPresetAction(app, name):
-    """Applica un preset salvato e aggiorna l'interfaccia."""
-    app.dialog.dismiss()
-    params = app.utils.loadPreset(name)
-
-    if params:
-        for key, value in params.items():
-            app.processor.updateParam(key, value)
-
-        app.processor.applyProcessing()
-        refreshPreviewAction(app)
-        app.manualMenu.syncSliders(app.processor.currentParams)
-        app.utils.logAction(f"Preset caricato: {name}")
-
-def deletePresetAction(app, name):
-    """Elimina un preset e ricarica la lista."""
-    app.utils.deletePreset(name)
-    app.utils.logAction(f"Preset eliminato: {name}")
-    app.dialog.dismiss()
-    showLoadPresetDialogAction(app)
-
-def showLogDialogAction(app):
-    """Mostra la cronologia testuale di tutte le azioni della sessione."""
-    logs = app.utils.getLogs() or "Nessuna azione registrata in questa sessione."
-    app.dialog = MDDialog(
-        title="Cronologia Azioni",
-        text=logs,
         buttons=[MDFlatButton(text="CHIUDI", on_release=lambda x: app.dialog.dismiss())]
     )
     app.dialog.open()

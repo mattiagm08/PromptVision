@@ -1,28 +1,30 @@
 from PIL import Image, ImageEnhance
 import os
+import copy
 
 class ImageEngine:
     def __init__(self):
-        # IMMAGINE ORIGINALE CARICATA DALL’UTENTE (MAI MODIFICATA)
+        # IMMAGINE ORIGINALE CARICATA DALL'UTENTE
         self.originalImage = None
 
-        # IMMAGINE BASE SU CUI APPLICARE FILTRI (DOPO CROP O RESET)
+        # IMMAGINE IN LAVORAZIONE SU CUI APPLICARE LE MODIFICHE
         self.workingImage = None
 
-        # RISULTATO FINALE DOPO L’APPLICAZIONE DEI PARAMETRI
+        # IMMAGINE ELABORATA CON TUTTI GLI EFFETTI APPLICATI
         self.processedImage = None
 
-        # IMMAGINE CHE CONTIENE LO STATO FILTRATO CORRENTE (per preview interna)
+        # RIFERIMENTO ALL'IMMAGINE ATTUALE MOSTRATA IN UI
         self.currentImage = None
 
-        # STATO CENTRALIZZATO DEI PARAMETRI DI EDITING
+        # PARAMETRI CORRENTI DI ELABORAZIONE (BRIGHTNESS, CONTRAST, ETC.)
         self.currentParams = self._defaultParams()
 
-        # CRONOLOGIA DEGLI STATI (Necessaria per log e funzioni di annullamento)
-        self.history = []
+        # STACK PER GESTIONE UNDO/REDO
+        self.undoStack = []
+        self.redoStack = []
 
     def _defaultParams(self):
-        # VALORI STANDARD PER TUTTI I PARAMETRI
+        # RESTITUISCE I PARAMETRI DI DEFAULT (VALORE NEUTRO = 1.0)
         return {
             "brightness": 1.0,
             "contrast": 1.0,
@@ -31,8 +33,33 @@ class ImageEngine:
             "warmth": 1.0
         }
 
+    def _pushState(self):
+        # MEMORIZZA LO STATO CORRENTE NELLO STACK UNDO E RESETTA REDO
+        self.undoStack.append(copy.deepcopy(self.currentParams))
+        self.redoStack.clear()
+
+    def undo(self):
+        # ESEGUE UN UNDO DEI PARAMETRI E APPLICA ELABORAZIONE
+        if not self.undoStack:
+            return False
+
+        self.redoStack.append(copy.deepcopy(self.currentParams))
+        self.currentParams = self.undoStack.pop()
+        self.applyProcessing(pushState=False)
+        return True
+
+    def redo(self):
+        # ESEGUE UN REDO DEI PARAMETRI E APPLICA ELABORAZIONE
+        if not self.redoStack:
+            return False
+
+        self.undoStack.append(copy.deepcopy(self.currentParams))
+        self.currentParams = self.redoStack.pop()
+        self.applyProcessing(pushState=False)
+        return True
+
     def loadImage(self, path):
-        # CARICA L’IMMAGINE E RESETTA LO STATO
+        # CARICA L'IMMAGINE DAL DISCO E INIZIALIZZA LE IMMAGINI INTERNE
         if not os.path.exists(path):
             return False
 
@@ -41,50 +68,53 @@ class ImageEngine:
             self.workingImage = self.originalImage.copy()
             self.currentImage = self.originalImage.copy()
             self.currentParams = self._defaultParams()
-            self.history = [] # Reset cronologia per la nuova immagine
-            
-            self.applyProcessing()
+
+            self.undoStack.clear()
+            self.redoStack.clear()
+
+            self.applyProcessing(pushState=False)
             return True
         except Exception as e:
-            print(f"Errore nel caricamento immagine: {e}")
+            print(e)
             return False
 
     def updateParam(self, key, value):
-        # AGGIORNA UN PARAMETRO SE ESISTE
+        # AGGIORNA IL SINGOLO PARAMETRO E MEMORIZZA LO STATO PRECEDENTE
         if key in self.currentParams:
+            self._pushState()
             self.currentParams[key] = value
 
     def cropFormat(self, ratio):
-        # CROP CENTRALE MANTENENDO L’ASPECT RATIO DESIDERATO
+        # APPLICA IL RITAGLIO DELL'IMMAGINE IN BASE AL RAPPORTO SPECIFICATO
         if not self.workingImage:
             return
+
+        self._pushState()
 
         width, height = self.workingImage.size
         currentRatio = width / height
 
         if currentRatio > ratio:
-            # Immagine troppo larga
+            # RITAGLIO ORIZZONTALE
             newWidth = int(height * ratio)
             offset = (width - newWidth) // 2
             cropBox = (offset, 0, width - offset, height)
         else:
-            # Immagine troppo alta
+            # RITAGLIO VERTICALE
             newHeight = int(width / ratio)
             offset = (height - newHeight) // 2
             cropBox = (0, offset, width, height - offset)
 
         self.workingImage = self.workingImage.crop(cropBox)
-        self.applyProcessing() 
+        self.applyProcessing(pushState=False)
 
-    def applyProcessing(self):
-        # PIPELINE NON DISTRUTTIVA: parte sempre dalla workingImage originale
+    def applyProcessing(self, pushState=True):
+        # APPLICA TUTTI GLI EFFETTI SUI PARAMETRI CORRENTI
         if not self.workingImage:
             return
 
-        # Crea una copia della base su cui lavorare
-        image = self.workingImage.copy() 
+        image = self.workingImage.copy()
 
-        # Applicazione sequenziale dei filtri
         image = self._applySaturation(image)
         image = self._applyContrast(image)
         image = self._applyBrightness(image)
@@ -92,57 +122,54 @@ class ImageEngine:
         image = self._applyWarmth(image)
 
         self.processedImage = image
-        self.currentImage = image 
+        self.currentImage = image
 
-        # Registra lo stato attuale nella cronologia interna
-        self.history.append({
-            "params": self.currentParams.copy(),
-            "image_size": self.processedImage.size
-        })
-
-    # --- METODI PRIVATI PER L'APPLICAZIONE DEI FILTRI (Utilizzano Pillow) ---
-    
     def _applySaturation(self, image):
+        # APPLICA SATURAZIONE SULL'IMMAGINE
         value = self.currentParams["saturation"]
-        if value != 1.0:
-            return ImageEnhance.Color(image).enhance(value)
-        return image
+        return ImageEnhance.Color(image).enhance(value)
 
     def _applyContrast(self, image):
+        # APPLICA CONTRASTO SULL'IMMAGINE
         value = self.currentParams["contrast"]
-        if value != 1.0:
-            return ImageEnhance.Contrast(image).enhance(value)
-        return image
+        return ImageEnhance.Contrast(image).enhance(value)
 
     def _applyBrightness(self, image):
+        # APPLICA LUMINOSITÀ SULL'IMMAGINE
         value = self.currentParams["brightness"]
-        if value != 1.0:
-            return ImageEnhance.Brightness(image).enhance(value)
-        return image
+        return ImageEnhance.Brightness(image).enhance(value)
 
     def _applySharpness(self, image):
+        # APPLICA NITIDEZZA SULL'IMMAGINE
         value = self.currentParams["sharpness"]
-        if value != 1.0:
-            return ImageEnhance.Sharpness(image).enhance(value)
-        return image
+        return ImageEnhance.Sharpness(image).enhance(value)
 
     def _applyWarmth(self, image):
+        # APPLICA TEMPERATURA CALDA/FREDDA SULL'IMMAGINE
         value = self.currentParams["warmth"]
         if value == 1.0:
             return image
 
-        # Split dei canali per manipolare la temperatura colore
         r, g, b = image.split()
-        # Aumenta il Rosso (caldo) e diminuisce il Blu (freddo) o viceversa
-        r = r.point(lambda i: min(255, max(0, int(i * value))))
-        b = b.point(lambda i: min(255, max(0, int(i * (2.0 - value)))))
+        r = r.point(lambda i: min(255, int(i * value)))
+        b = b.point(lambda i: min(255, int(i * (2.0 - value))))
         return Image.merge("RGB", (r, g, b))
 
     def saveTempResult(self):
-        # SALVA UN FILE TEMPORANEO PER IL WIDGET IMAGE DI KIVY
+        # SALVA TEMPORANEAMENTE L'IMMAGINE ELABORATA IN ASSETS/ E RESTITUISCE IL PATH
         os.makedirs("assets", exist_ok=True)
         path = "assets/temp_result.png"
         if self.processedImage:
-            # Usiamo PNG per mantenere la massima qualità durante l'editing
             self.processedImage.save(path, "PNG")
         return path
+
+    def updateParamsBatch(self, changes: dict):
+        # AGGIORNA MULTIPLI PARAMETRI IN BLOCCO E MEMORIZZA STATO PRECEDENTE
+        if not changes:
+            return
+
+        self._pushState()
+
+        for key, value in changes.items():
+            if key in self.currentParams:
+                self.currentParams[key] = value
